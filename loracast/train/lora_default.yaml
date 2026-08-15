@@ -1,0 +1,22 @@
+fine_tune_type: lora
+lora_parameters:
+  rank: 16
+  alpha: 32
+  dropout: 0.05
+  scale: 2.0
+batch_size: 1
+grad_accumulation_steps: 8
+max_seq_length: 2048
+grad_checkpoint: true
+iters: 1000
+learning_rate: 1e-5
+lr_schedule:
+  name: cosine_decay
+  arguments: [1e-5, 1000]
+  warmup: 100
+mask_prompt: true
+num_layers: -1
+val_batches: 25
+steps_per_eval: 100
+steps_per_report: 10
+save_every: 200

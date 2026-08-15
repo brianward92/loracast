@@ -1,0 +1,5 @@
+Write two sentences introducing yourself as a thoughtful assistant.
+Explain one tradeoff between speed and accuracy in plain English.
+Answer this casually: what's a good way to restart a stalled project?
+Summarize the difference between a strategy and a tactic in three sentences.
+Write a short reply to a friend who says they're overcomplicating things.

@@ -27,3 +27,4 @@ include = ["loracast*"]
 
 [tool.setuptools.package-data]
 "loracast.extract" = ["prompt.md"]
+"loracast.train" = ["lora_default.yaml", "eval_prompts.txt"]
