@@ -27,7 +27,7 @@ class ClaudeCLIBackend:
 
     name = "cli"
 
-    def __init__(self, model: str | None = None) -> None:
+    def __init__(self, model: str | None = None, effort: str | None = None) -> None:
         claude_bin = shutil.which("claude")
         if not claude_bin:
             raise RuntimeError(
@@ -35,10 +35,14 @@ class ClaudeCLIBackend:
             )
         self.claude_bin = claude_bin
         self.model = model or DEFAULT_CLI_MODEL
+        self.effort = effort
 
     def complete(self, prompt: str, timeout_s: int) -> str:
+        cmd = [self.claude_bin, "-p", prompt, "--model", self.model]
+        if self.effort:
+            cmd += ["--effort", self.effort]
         result = subprocess.run(
-            [self.claude_bin, "-p", prompt, "--model", self.model],
+            cmd,
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -77,9 +81,11 @@ class AnthropicAPIBackend:
         )
 
 
-def get_backend(name: str, model: str | None = None) -> ExtractorBackend:
+def get_backend(
+    name: str, model: str | None = None, effort: str | None = None
+) -> ExtractorBackend:
     if name == "cli":
-        return ClaudeCLIBackend(model)
+        return ClaudeCLIBackend(model, effort)
     if name == "api":
         return AnthropicAPIBackend(model)
     raise ValueError(f"unknown backend: {name}")

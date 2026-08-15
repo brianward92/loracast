@@ -35,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--backend", choices=["cli", "api"], default="cli")
     extract.add_argument("--model", default=None, help="Backend model override.")
+    extract.add_argument(
+        "--effort", default=None, help="Reasoning effort (cli backend only)."
+    )
     extract.add_argument("--source", default=None, help="Restrict to one slug.")
     extract.add_argument("--limit", type=int, default=None)
     extract.add_argument("--parallel", type=int, default=4)
@@ -111,7 +114,7 @@ def main() -> None:
 
         podcasts = data_root() / "podcasts"
         stats = run_extract(
-            backend=get_backend(args.backend, args.model),
+            backend=get_backend(args.backend, args.model, args.effort),
             db_path=podcasts / "state.sqlite3",
             out_root=podcasts / "training_examples",
             source=args.source,
