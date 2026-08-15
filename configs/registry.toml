@@ -1,0 +1,22 @@
+# Podcast source registry. Both shows are NPR feeds that publish official
+# transcripts, so the default install ingests real data with stdlib only.
+
+[[sources]]
+slug = "planet-money"
+name = "Planet Money"
+adapter = "rss_html"
+feed_url = "https://www.npr.org/rss/podcast.php?id=510289"
+homepage_url = "https://www.npr.org/podcasts/510289/planet-money"
+allowed_domains = ["npr.org", "www.npr.org", "feeds.npr.org"]
+transcript_link_keywords = ["transcript", "full transcript", "episode transcript"]
+forbidden_terms = ["do not scrape", "automated access prohibited", "not for redistribution"]
+
+[[sources]]
+slug = "the-indicator"
+name = "The Indicator from Planet Money"
+adapter = "rss_html"
+feed_url = "https://www.npr.org/rss/podcast.php?id=510325"
+homepage_url = "https://www.npr.org/podcasts/510325/the-indicator-from-planet-money"
+allowed_domains = ["npr.org", "www.npr.org", "feeds.npr.org"]
+transcript_link_keywords = ["transcript", "full transcript", "episode transcript"]
+forbidden_terms = ["do not scrape", "automated access prohibited", "not for redistribution"]
