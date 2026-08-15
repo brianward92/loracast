@@ -28,8 +28,17 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.add_argument("--episode-limit", type=int, default=None)
     ingest.add_argument("--skip-asr", action="store_true")
 
+    extract = subparsers.add_parser(
+        "extract", help="Extract training Q&A pairs from ready transcripts."
+    )
+    extract.add_argument("--backend", choices=["cli", "api"], default="cli")
+    extract.add_argument("--model", default=None, help="Backend model override.")
+    extract.add_argument("--source", default=None, help="Restrict to one slug.")
+    extract.add_argument("--limit", type=int, default=None)
+    extract.add_argument("--parallel", type=int, default=4)
+    extract.add_argument("--timeout", type=int, default=600)
+
     for name, help_text in (
-        ("extract", "Extract training data from transcripts with an LLM."),
         ("train", "Fine-tune a LoRA adapter on extracted data."),
         ("eval", "Score an adapter on held-out prompts."),
     ):
@@ -41,8 +50,25 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args, _ = build_parser().parse_known_args()
 
-    if args.command in {"extract", "train", "eval"}:
+    if args.command in {"train", "eval"}:
         raise SystemExit(f"loracast {args.command}: not yet available in this release")
+
+    if args.command == "extract":
+        from .extract.backends import get_backend
+        from .extract.run import run_extract
+
+        podcasts = data_root() / "podcasts"
+        stats = run_extract(
+            backend=get_backend(args.backend, args.model),
+            db_path=podcasts / "state.sqlite3",
+            out_root=podcasts / "training_examples",
+            source=args.source,
+            limit=args.limit,
+            parallel=args.parallel,
+            timeout_s=args.timeout,
+        )
+        print(json.dumps(stats, indent=2, sort_keys=True))
+        return
 
     from .ingest import reports
     from .ingest.pipeline import PodcastPipeline
