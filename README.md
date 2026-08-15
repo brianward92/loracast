@@ -17,6 +17,12 @@ expertise. (And LoRACast is unrelated to LoRa radio.)
 ## Install
 
 ```sh
+bash scripts/setup.sh   # venv at ~/.loracast/env + PATH, asr/youtube extras
+```
+
+or plain pip:
+
+```sh
 pip install -e '.[dev]'
 ```
 
