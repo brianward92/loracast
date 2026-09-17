@@ -18,17 +18,28 @@ def build_parser() -> argparse.ArgumentParser:
         "ingest", help="Discover episodes and acquire transcripts."
     )
     ingest.add_argument(
-        "action", choices=["run", "status", "manifest"], help="Ingest action."
+        "action",
+        choices=["run", "status", "manifest", "init-registry"],
+        help="Ingest action.",
     )
     ingest.add_argument(
         "--registry",
-        default="configs/registry.toml",
-        help="Path to the source registry TOML.",
+        default=None,
+        help=(
+            "Path to the source registry TOML. Defaults to "
+            "$LORACAST_DATA/registry.toml when that file exists, otherwise the "
+            "built-in example registry."
+        ),
     )
     ingest.add_argument("--source", action="append", default=None)
     ingest.add_argument("--limit-per-source", type=int, default=None)
     ingest.add_argument("--episode-limit", type=int, default=None)
     ingest.add_argument("--skip-asr", action="store_true")
+    ingest.add_argument(
+        "--force",
+        action="store_true",
+        help="init-registry: overwrite an existing registry file.",
+    )
 
     extract = subparsers.add_parser(
         "extract", help="Extract training Q&A pairs from ready transcripts."
@@ -125,11 +136,34 @@ def main() -> None:
         print(json.dumps(stats, indent=2, sort_keys=True))
         return
 
+    from .ingest.registry import (
+        default_registry_text,
+        load_registry,
+        user_registry_path,
+    )
+
+    if args.action == "init-registry":
+        target = user_registry_path()
+        if target.exists() and not args.force:
+            raise SystemExit(
+                f"registry already exists: {target}\n"
+                "Edit it, or pass --force to overwrite it with the built-in "
+                "example registry."
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(default_registry_text(), encoding="utf-8")
+        print(f"wrote registry: {target}")
+        print("Edit it to add or remove sources, then run: loracast ingest run")
+        return
+
     from .ingest import reports
     from .ingest.pipeline import PodcastPipeline
-    from .ingest.registry import load_registry
 
-    config = load_registry(args.registry)
+    try:
+        config = load_registry(args.registry)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+
     pipeline = PodcastPipeline(config=config, root_dir=data_root() / "podcasts")
 
     if args.action == "run":

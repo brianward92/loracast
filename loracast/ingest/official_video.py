@@ -252,7 +252,7 @@ def _matches_official_source(
             entry.get("url", ""),
         ]
         # Compare both with and without spaces so that a config handle like
-        # "@ProfGMarkets" matches a YouTube display name like "Prof G Markets".
+        # "@ExampleShow" matches a YouTube display name like "Example Show".
         expected_compact = expected_handle.replace(" ", "")
         for value in haystacks:
             if not value:

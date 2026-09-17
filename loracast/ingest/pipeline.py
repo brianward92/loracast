@@ -8,7 +8,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 from urllib.parse import urlparse
-import fcntl
+
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl module
+    fcntl = None
 
 from . import fetch, strategies
 from .adapters import get_adapter
@@ -744,16 +748,22 @@ class PodcastPipeline:
 
     @contextmanager
     def _writer_lock(self, operation: str) -> Iterator[None]:
+        """Advisory cross-process writer lock via ``fcntl.flock``.
+
+        Best-effort: degrades to a no-op lock where ``fcntl`` is unavailable
+        (non-POSIX platforms) so callers keep running instead of crashing.
+        """
         self.root_dir.mkdir(parents=True, exist_ok=True)
         lock_path = self.root_dir / self.WRITE_LOCK_NAME
         with lock_path.open("a+") as handle:
-            try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise RuntimeError(
-                    f"another loracast ingest writer is active; wait for it to "
-                    f"finish before running {operation}"
-                ) from exc
+            if fcntl is not None:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise RuntimeError(
+                        f"another loracast ingest writer is active; wait for it to "
+                        f"finish before running {operation}"
+                    ) from exc
             handle.seek(0)
             handle.truncate()
             handle.write(f"{operation}\n{os.getpid()}\n{utcnow()}\n")
@@ -763,4 +773,5 @@ class PodcastPipeline:
             finally:
                 handle.seek(0)
                 handle.truncate()
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

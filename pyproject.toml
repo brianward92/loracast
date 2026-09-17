@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,14 +10,41 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "Brian Ward", email = "brian.ward.92@gmail.com" }]
+keywords = [
+    "podcast",
+    "transcripts",
+    "lora",
+    "fine-tuning",
+    "mlx",
+    "dataset",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    # No "License ::" classifier: PEP 639 / setuptools>=77 reject those
+    # alongside the SPDX `license = "Apache-2.0"` expression above.
+    "Operating System :: POSIX",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+]
 dependencies = []
 
 [project.optional-dependencies]
 asr = ["faster-whisper"]
 youtube = ["yt-dlp"]
-train = ["mlx-lm", "pyyaml"]
+train = ["mlx-lm", "transformers"]
 api = ["anthropic"]
 dev = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/brianward92/loracast"
+Repository = "https://github.com/brianward92/loracast"
+Issues = "https://github.com/brianward92/loracast/issues"
 
 [project.scripts]
 loracast = "loracast.cli:main"
@@ -27,4 +54,5 @@ include = ["loracast*"]
 
 [tool.setuptools.package-data]
 "loracast.extract" = ["prompt.md"]
-"loracast.train" = ["lora_default.yaml", "eval_prompts.txt"]
+"loracast.ingest" = ["registry_default.toml"]
+"loracast.train" = ["lora_default.yaml"]

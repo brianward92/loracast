@@ -10,7 +10,12 @@ from pathlib import Path
 def filter_long_seqs(
     model: str, input_dir: Path, output_dir: Path, max_seq_length: int = 2048
 ) -> dict[str, dict[str, int]]:
-    from transformers import AutoTokenizer
+    try:
+        from transformers import AutoTokenizer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "transformers package not installed; pip install 'loracast[train]'"
+        ) from exc
 
     tokenizer = AutoTokenizer.from_pretrained(model)
     output_dir.mkdir(parents=True, exist_ok=True)

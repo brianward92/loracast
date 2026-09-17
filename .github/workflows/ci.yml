@@ -5,13 +5,124 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege: CI only reads the repo. It never pushes, tags, or
+# publishes, so it needs no other permission.
+permissions:
+  contents: read
+
 jobs:
+  # Runs the test suite from an editable install of the checkout. This is
+  # the fast inner-loop job; it does not prove the shipped package works.
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # ingest is POSIX-only and train is Apple Silicon-only, so cover both
+      # supported platforms. Windows is intentionally excluded: the package
+      # does not claim Windows support.
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
-      - run: pytest
+
+      - name: Install package in editable mode with dev extras
+        run: pip install -e '.[dev]'
+
+      - name: Run test suite
+        run: pytest
+
+  # Proves the wheel is self-contained: builds it, installs only the wheel
+  # (never the source tree, never editable) into a clean virtualenv, and
+  # exercises the CLI from a directory outside the checkout. This is the
+  # job that would have caught the missing-package-data and
+  # build-backend-floor bugs, since neither surfaces from an editable
+  # install run from the repo root.
+  package:
+    name: Verify the built wheel is self-contained
+    runs-on: ubuntu-latest
+    env:
+      # Scratch locations, all outside the checkout on purpose.
+      WHEEL_VENV: ${{ runner.temp }}/wheel-venv
+      NOISO_VENV: ${{ runner.temp }}/no-isolation-venv
+      OUTSIDE_DIR: ${{ runner.temp }}/outside-checkout
+      LORACAST_DATA: ${{ runner.temp }}/loracast-data
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the build frontend
+        run: pip install build
+
+      - name: Build sdist and wheel
+        # Normal, network-allowed, isolated build. This confirms the
+        # project's build metadata (including the license expression) is
+        # generatable with the declared build-backend floor.
+        run: python -m build
+
+      - name: Guard against a too-low build-backend floor
+        # --no-build-isolation installs using whatever build backend is
+        # already present, the same code path a `pip install` without
+        # isolation hits. A setuptools floor too low to understand the
+        # declared license metadata fails right here.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$NOISO_VENV"
+          "$NOISO_VENV/bin/pip" install --upgrade pip setuptools wheel
+          "$NOISO_VENV/bin/pip" install --no-build-isolation .
+
+      - name: Create a clean virtual environment for the wheel install
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$WHEEL_VENV"
+          "$WHEEL_VENV/bin/pip" install --upgrade pip
+
+      - name: Install the built wheel (not the source tree, not editable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$WHEEL_VENV/bin/pip" install dist/*.whl
+
+      - name: Prepare a working directory outside the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUTSIDE_DIR" "$LORACAST_DATA"
+
+      - name: Run the CLI and every subcommand help from outside the checkout
+        # A working-directory dependency on the source tree (e.g. an
+        # un-packaged data or prompt file read by relative path) fails here
+        # because the shell's cwd is no longer inside the repo.
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$OUTSIDE_DIR"
+          "$WHEEL_VENV/bin/loracast" --help
+          "$WHEEL_VENV/bin/loracast" ingest --help
+          "$WHEEL_VENV/bin/loracast" extract --help
+          "$WHEEL_VENV/bin/loracast" train --help
+          "$WHEEL_VENV/bin/loracast" eval --help
+
+      - name: Regression test - shipped registry data file must be in the wheel
+        # loracast ingest init-registry reads a TOML file that must be
+        # packaged inside loracast/ingest via importlib.resources. If it is
+        # not shipped in the wheel, this fails for every pip-installed user
+        # even though it works fine from an editable checkout.
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$OUTSIDE_DIR"
+          "$WHEEL_VENV/bin/loracast" ingest init-registry
+          "$WHEEL_VENV/bin/loracast" ingest status

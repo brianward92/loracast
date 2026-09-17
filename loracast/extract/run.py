@@ -32,6 +32,11 @@ def iter_pending(
     db_path: Path, out_root: Path, source: str | None, limit: int | None
 ) -> list[dict]:
     """Ready episodes without an existing output file, newest first."""
+    if not db_path.exists():
+        raise SystemExit(
+            f"no ingest database found at {db_path}; "
+            "run `loracast ingest run` first"
+        )
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     sql = (

@@ -16,12 +16,21 @@ attempt (including failures and rejections), are recorded in
 lock keeps concurrent runs from interleaving; stale in-progress rows are
 requeued after 30 minutes.
 
-**Strategy ordering.** Official transcript pages are preferred over YouTube
-captions, which are preferred over Apple Podcasts transcripts, with local
-Whisper ASR as the last resort. The ordering encodes trust: publisher
-transcripts are human-edited; captions and Apple transcripts are usually
-machine-generated; ASR is ours. A per-source `strategy_order` in the
-registry overrides the default.
+**Strategy ordering.** The default order is `official_site`,
+`official_youtube`, `asr` — the publisher's own transcript page first, then
+captions from the show's own YouTube channel or playlist, then local Whisper
+ASR as the last resort. The ordering encodes trust: publisher transcripts are
+human-edited; captions are usually machine-generated; ASR is ours.
+
+A fourth strategy, `apple_podcasts`, is implemented but opt-in. It is never
+part of a default order. It runs only for a source that names it in an
+explicit per-source `strategy_order`, and that also supplies an
+`apple_podcast_id`. The valid strategy names are `official_site`,
+`official_youtube`, `apple_podcasts`, and `asr`; an unrecognized name is
+skipped. A source that publishes no transcript page can set
+`official_youtube_only` to drop `official_site` from the default order
+instead of writing an order out by hand. See [registry.md](registry.md) for
+the full key reference.
 
 **Machine → official upgrades.** Publishers often post transcripts days
 after an episode ships. Episodes served by a machine transcript are
@@ -38,9 +47,15 @@ strategies can't swallow it — a hung fetch unwinds to the per-episode
 handler instead of being mistaken for a merely-failed strategy.
 
 **Source policy.** Each registry entry carries `allowed_domains` and
-`forbidden_terms`; a transcript page whose domain falls outside the
-allowlist, or whose text contains a publisher's do-not-scrape marker,
-aborts that episode's acquisition.
+`forbidden_terms`. These gate the `official_site` strategy: a candidate
+transcript link whose host is not in the allowlist is skipped during link
+resolution, a fetched transcript URL outside the allowlist aborts that
+episode's acquisition, and so does a `forbidden_terms` substring found in the
+episode page or transcript page text. Both are operator-configured
+convenience checks against an operator-configured list — they are exact
+string matching, they do not cover the YouTube, Apple, or audio-download
+paths, and they know nothing about `robots.txt` or any licence. See the
+"Content and rights" section of the README.
 
 ## Extract
 
