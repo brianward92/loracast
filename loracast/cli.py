@@ -134,6 +134,16 @@ def main() -> None:
             timeout_s=args.timeout,
         )
         print(json.dumps(stats, indent=2, sort_keys=True))
+        # Every dispatched episode failed, so the cause is systemic rather than
+        # a bad transcript: an expired subscription, an exhausted rate limit, a
+        # missing binary. Exit non-zero so a scheduler shows the run as failed.
+        # A partial failure stays successful: extraction is idempotent and the
+        # episodes that failed are retried on the next run.
+        if stats["episodes"] and not stats["ok"]:
+            raise SystemExit(
+                f"extraction failed for all {stats['episodes']} dispatched "
+                "episode(s); see the errors above"
+            )
         return
 
     from .ingest.registry import (
