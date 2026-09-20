@@ -153,7 +153,11 @@ reasoning effort and applies to the `cli` backend only. `--parallel`
 per-episode time budget.
 
 Extraction is idempotent: one output file per episode, and an episode that
-already has one is skipped, so a re-run does not spend quota twice.
+already has one is skipped, so a re-run does not spend quota twice. An
+episode whose reply contains no usable pairs gets no output file. It gets a
+`<episode_id>.empty.json` marker that keeps the start of the reply, and it is
+skipped until you pass `--retry-empty`. A run in which no episode produces a
+pair exits non-zero, unless it dispatched a single episode.
 
 ## Training
 

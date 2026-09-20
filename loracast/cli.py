@@ -53,6 +53,14 @@ def build_parser() -> argparse.ArgumentParser:
     extract.add_argument("--limit", type=int, default=None)
     extract.add_argument("--parallel", type=int, default=4)
     extract.add_argument("--timeout", type=int, default=600)
+    extract.add_argument(
+        "--retry-empty",
+        action="store_true",
+        help=(
+            "Dispatch again the episodes that produced zero pairs before "
+            "(those with a <episode_id>.empty.json marker)."
+        ),
+    )
 
     train = subparsers.add_parser(
         "train", help="Build the dataset and fine-tune a LoRA adapter (mlx-lm)."
@@ -132,17 +140,27 @@ def main() -> None:
             limit=args.limit,
             parallel=args.parallel,
             timeout_s=args.timeout,
+            retry_empty=args.retry_empty,
         )
         print(json.dumps(stats, indent=2, sort_keys=True))
-        # Every dispatched episode failed, so the cause is systemic rather than
-        # a bad transcript: an expired subscription, an exhausted rate limit, a
-        # missing binary. Exit non-zero so a scheduler shows the run as failed.
-        # A partial failure stays successful: extraction is idempotent and the
-        # episodes that failed are retried on the next run.
-        if stats["episodes"] and not stats["ok"]:
+        # No episode produced a pair, so the cause is systemic rather than a
+        # bad transcript: an expired subscription, an exhausted rate limit, a
+        # missing binary, or a backend that prints an error and exits 0 (that
+        # one shows up as every episode empty, with the reply kept in its
+        # .empty.json marker). Exit non-zero so a scheduler shows the run as
+        # failed. A single empty episode is a normal outcome and stays
+        # successful, as does any partial failure: extraction is idempotent
+        # and failed episodes are retried on the next run.
+        episodes = stats["episodes"]
+        failed = stats["failed"]
+        empty = stats.get("empty", 0)
+        all_failed = bool(episodes) and failed == episodes
+        none_succeeded = episodes >= 2 and failed + empty == episodes
+        if all_failed or none_succeeded:
             raise SystemExit(
-                f"extraction failed for all {stats['episodes']} dispatched "
-                "episode(s); see the errors above"
+                f"no pairs from any of the {episodes} dispatched episode(s): "
+                f"{failed} failed, {empty} empty; see the errors above and the "
+                ".empty.json markers"
             )
         return
 

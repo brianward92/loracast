@@ -131,16 +131,51 @@ class ExtractRunTests(unittest.TestCase):
             self.assertEqual(stats["episodes"], 0)
             self.assertEqual(backend.prompts, [])
 
-    def test_empty_response_writes_empty_file(self) -> None:
+    def test_empty_response_writes_marker_not_jsonl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db_path = self._seed_episode(root)
             out_root = root / "out"
-            stats = run.run_extract(FakeBackend(""), db_path, out_root, parallel=1)
-            self.assertEqual(stats["pairs"], 0)
-            self.assertEqual(
-                run.output_path_for(out_root, "test-pod", "ep1").read_text(), ""
+            reply = "Sorry, I cannot help with that."
+            stats = run.run_extract(FakeBackend(reply), db_path, out_root, parallel=1)
+            self.assertEqual((stats["ok"], stats["empty"], stats["pairs"]), (0, 1, 0))
+            self.assertFalse(run.output_path_for(out_root, "test-pod", "ep1").exists())
+            marker = run.empty_marker_for(out_root, "test-pod", "ep1")
+            record = json.loads(marker.read_text())
+            self.assertEqual(record["episode_id"], "ep1")
+            self.assertEqual(record["response_head"], reply)
+            self.assertEqual(record["model"], "fake-model")
+
+    def test_marked_empty_episode_is_skipped_until_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = self._seed_episode(root)
+            out_root = root / "out"
+            run.run_extract(FakeBackend(""), db_path, out_root, parallel=1)
+
+            backend = FakeBackend(_pair_line())
+            stats = run.run_extract(backend, db_path, out_root, parallel=1)
+            self.assertEqual(stats["episodes"], 0, "marked episode must be skipped")
+            self.assertEqual(backend.prompts, [])
+
+            stats = run.run_extract(
+                backend, db_path, out_root, parallel=1, retry_empty=True
             )
+            self.assertEqual((stats["episodes"], stats["ok"]), (1, 1))
+            self.assertTrue(run.output_path_for(out_root, "test-pod", "ep1").exists())
+            self.assertFalse(
+                run.empty_marker_for(out_root, "test-pod", "ep1").exists(),
+                "a successful retry must remove the marker",
+            )
+
+    def test_jsonl_is_written_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = self._seed_episode(root)
+            out_root = root / "out"
+            run.run_extract(FakeBackend(_pair_line()), db_path, out_root, parallel=1)
+            leftovers = list((out_root / "test-pod").glob("*.tmp"))
+            self.assertEqual(leftovers, [])
 
 
 class BackendTests(unittest.TestCase):

@@ -22,25 +22,57 @@ class ExtractExitCodeTest(unittest.TestCase):
     the command still reports success, so a scheduler shows the run as green.
     """
 
-    def test_total_failure_exits_non_zero(self) -> None:
-        stats = {"episodes": 2, "ok": 0, "failed": 2, "pairs": 0, "errors": ["x"]}
+    def _stats(self, episodes: int, ok: int, failed: int, empty: int = 0) -> dict:
+        return {
+            "episodes": episodes,
+            "ok": ok,
+            "failed": failed,
+            "empty": empty,
+            "pairs": ok * 3,
+            "errors": ["x"] * failed,
+        }
+
+    def _assert_exits_non_zero(self, stats: dict, why: str) -> None:
         with self.assertRaises(SystemExit) as caught:
             _run_extract(stats)
-        self.assertNotEqual(
-            caught.exception.code, 0, "Total extraction failure must exit non-zero."
+        self.assertNotEqual(caught.exception.code, 0, why)
+
+    def test_total_failure_exits_non_zero(self) -> None:
+        self._assert_exits_non_zero(
+            self._stats(2, 0, 2), "Total extraction failure must exit non-zero."
         )
 
+    def test_single_failure_exits_non_zero(self) -> None:
+        self._assert_exits_non_zero(
+            self._stats(1, 0, 1), "One dispatched episode that failed is a failed run."
+        )
+
+    def test_all_empty_exits_non_zero(self) -> None:
+        self._assert_exits_non_zero(
+            self._stats(2, 0, 0, empty=2),
+            "Two or more episodes that all produced nothing look like a backend "
+            "printing an error with exit 0.",
+        )
+
+    def test_failed_plus_empty_exits_non_zero(self) -> None:
+        self._assert_exits_non_zero(
+            self._stats(3, 0, 2, empty=1), "No episode produced a pair."
+        )
+
+    def test_single_empty_succeeds(self) -> None:
+        _run_extract(self._stats(1, 0, 0, empty=1))
+
+    def test_empty_plus_ok_succeeds(self) -> None:
+        _run_extract(self._stats(3, 1, 0, empty=2))
+
     def test_partial_failure_succeeds(self) -> None:
-        stats = {"episodes": 3, "ok": 2, "failed": 1, "pairs": 5, "errors": ["x"]}
-        _run_extract(stats)
+        _run_extract(self._stats(3, 2, 1))
 
     def test_all_succeeded(self) -> None:
-        stats = {"episodes": 3, "ok": 3, "failed": 0, "pairs": 9, "errors": []}
-        _run_extract(stats)
+        _run_extract(self._stats(3, 3, 0))
 
     def test_nothing_pending_succeeds(self) -> None:
-        stats = {"episodes": 0, "ok": 0, "failed": 0, "pairs": 0, "errors": []}
-        _run_extract(stats)
+        _run_extract(self._stats(0, 0, 0))
 
 
 if __name__ == "__main__":
