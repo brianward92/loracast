@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from loracast.ingest import fetch, reports
 from loracast.ingest.db import connect
+from loracast.ingest.store import store_canonical_transcript
 from loracast.ingest.official_apple import find_apple_episode, fetch_apple_transcript
 from loracast.ingest.official_video import parse_vtt, title_similarity
 from loracast.ingest.pipeline import PodcastPipeline
@@ -20,6 +22,78 @@ def _insert_episode(conn, **values) -> None:
         f"INSERT INTO episodes ({columns}) VALUES ({placeholders})",
         tuple(values.values()),
     )
+
+
+class ReparseTests(unittest.TestCase):
+    def _seed(self, pipeline, conn, episode_id, raw_html, old_text):
+        raw = pipeline.artifact_dir / "planet-money" / f"{episode_id}.html"
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        raw.write_text(raw_html)
+        episode = {
+            "episode_id": episode_id,
+            "podcast_slug": "planet-money",
+            "title": f"Episode {episode_id}",
+        }
+        _insert_episode(
+            conn,
+            episode_id=episode_id,
+            podcast_slug="planet-money",
+            title=episode["title"],
+            episode_url=f"https://example.com/{episode_id}",
+            published_at="2026-08-01T00:00:00+00:00",
+            pull_status="transcript_ready",
+            transcript_source_type="official_site",
+        )
+        store_canonical_transcript(
+            conn=conn,
+            transcript_dir=pipeline.transcript_dir,
+            transcript_meta_dir=pipeline.transcript_meta_dir,
+            episode=episode,
+            transcript_text=old_text,
+            source_type="official_site",
+            source_url=f"https://example.com/t/{episode_id}",
+            resolution_note="official_site",
+            artifact_path=str(raw),
+            audio_path=None,
+        )
+        conn.commit()
+        return pipeline.transcript_dir / "planet-money" / f"{episode_id}.txt"
+
+    def test_reparse_rewrites_junk_and_parks_empty_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = {"sources": [{"slug": "planet-money", "name": "Planet Money"}]}
+            pipeline = PodcastPipeline(config=config, root_dir=Path(tmp) / "state")
+            turns = [f"HOST, BYLINE: Turn number {i} of a long conversation." for i in range(20)]
+            clean = "\n".join(turns)
+            good = (
+                "<nav>Skip</nav><div class=\"transcript storytext\">"
+                + "".join(f"<p>{turn}</p>" for turn in turns)
+                + "</div><footer>Junk</footer>"
+            )
+            shell = "<nav>Skip</nav><div class=\"transcript storytext\"></div>"
+            with connect(pipeline.db_path) as conn:
+                good_path = self._seed(pipeline, conn, "ep-good", good, "Skip\n" + clean + "\nJunk")
+                self._seed(pipeline, conn, "ep-shell", shell, "Skip")
+                self._seed(pipeline, conn, "ep-same", good, clean)
+
+            dry = pipeline.reparse_official_site(dry_run=True)
+            self.assertEqual((dry["rewritten"], dry["emptied"], dry["unchanged"]), (1, 1, 1))
+            self.assertEqual(good_path.read_text(), "Skip\n" + clean + "\nJunk\n", "dry run must not write")
+
+            stats = pipeline.reparse_official_site()
+            self.assertEqual((stats["rewritten"], stats["emptied"], stats["unchanged"]), (1, 1, 1))
+            self.assertEqual(good_path.read_text(), clean + "\n")
+            self.assertEqual(stats["emptied_ids"], ["ep-shell"])
+            with connect(pipeline.db_path) as conn:
+                status, reason = conn.execute(
+                    "SELECT pull_status, skip_reason FROM episodes WHERE episode_id = 'ep-shell'"
+                ).fetchone()
+                new_hash = conn.execute(
+                    "SELECT content_hash FROM episode_transcripts WHERE episode_id = 'ep-good'"
+                ).fetchone()[0]
+            self.assertEqual(status, "no_transcript_found")
+            self.assertIn("no transcript body", reason)
+            self.assertEqual(new_hash, hashlib.sha1(clean.encode("utf-8")).hexdigest())
 
 
 class PipelineTests(unittest.TestCase):

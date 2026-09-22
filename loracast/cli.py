@@ -19,8 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingest.add_argument(
         "action",
-        choices=["run", "status", "manifest", "init-registry"],
-        help="Ingest action.",
+        choices=["run", "status", "manifest", "init-registry", "reparse"],
+        help=(
+            "Ingest action. `reparse` re-derives official-site transcripts from "
+            "the saved raw pages with the current parser; no request is made."
+        ),
     )
     ingest.add_argument(
         "--registry",
@@ -39,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="init-registry: overwrite an existing registry file.",
+    )
+    ingest.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="reparse: report what would change without writing anything.",
     )
 
     extract = subparsers.add_parser(
@@ -193,6 +201,21 @@ def main() -> None:
         raise SystemExit(str(exc)) from exc
 
     pipeline = PodcastPipeline(config=config, root_dir=data_root() / "podcasts")
+
+    if args.action == "reparse":
+        stats = pipeline.reparse_official_site(
+            source_slugs=args.source, dry_run=args.dry_run
+        )
+        # An episode whose saved page had no transcript body goes back to
+        # acquisition; drop its empty-extraction marker so a transcript found
+        # later is extracted rather than skipped.
+        if not args.dry_run:
+            out_root = data_root() / "podcasts" / "training_examples"
+            for episode_id in stats["emptied_ids"]:
+                for marker in out_root.glob(f"*/{episode_id}.empty.json"):
+                    marker.unlink()
+        print(json.dumps(stats, indent=2, sort_keys=True))
+        return
 
     if args.action == "run":
         stats = pipeline.run(

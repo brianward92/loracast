@@ -13,7 +13,7 @@ from pathlib import Path
 from .asr import DEFAULT_FASTER_WHISPER_MODEL, load_whisper_model, transcribe_audio
 from .adapters import get_adapter
 from .fetch import log
-from .normalize import html_to_transcript_text
+from .normalize import has_transcript_body, html_to_transcript_text
 from .official_apple import (
     fetch_apple_transcript,
     find_apple_episode,
@@ -97,6 +97,21 @@ def try_official_site(
         pipeline.artifact_dir, episode=episode, suffix=".html", content=transcript_html
     )
     transcript_text = html_to_transcript_text(transcript_html)
+    if not has_transcript_body(transcript_text):
+        # The page rendered without its transcript body (or the link resolved
+        # to an index page). Storing the page chrome as a transcript is how
+        # empty "transcripts" reached the corpus before 2026-09.
+        record_attempt(
+            conn=conn,
+            episode_id=episode["episode_id"],
+            attempt_type="official_site",
+            source_url=transcript_url,
+            outcome="no_result",
+            note="transcript page has no transcript body",
+            artifact_path=str(artifact_path),
+            audio_path=episode.get("audio_path"),
+        )
+        return None
     return {
         "content": transcript_text,
         "source_url": transcript_url,

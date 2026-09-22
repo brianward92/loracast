@@ -101,7 +101,11 @@ overwrite an existing registry unless you pass `--force`.
 precedence over both the per-user file and the built-in example.
 
 `loracast ingest status` and `loracast ingest manifest` report coverage and
-export the transcript manifest.
+export the transcript manifest. `loracast ingest reparse` re-derives every
+official-site transcript from the raw page saved at fetch time using the
+current parser, without contacting the publisher; use it after a parser
+improvement. Pass `--dry-run` to see the counts first. An episode whose saved
+page turns out to have no transcript body returns to `no_transcript_found`.
 
 ### Adding your own shows
 

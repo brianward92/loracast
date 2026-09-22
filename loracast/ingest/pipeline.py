@@ -25,6 +25,7 @@ from .fetch import (
     time_limit,
     utcnow,
 )
+from .normalize import has_transcript_body, html_to_transcript_text
 from .store import record_attempt, store_canonical_transcript, upsert_episode
 
 # How far back to keep re-checking for an official transcript to replace a
@@ -296,6 +297,90 @@ class PodcastPipeline:
             )
         else:
             stats["upgrade"] = {"skipped": True}
+        return stats
+
+    def reparse_official_site(
+        self, source_slugs: list[str] | None = None, dry_run: bool = False
+    ) -> dict:
+        """Re-derive official-site transcripts from the saved raw pages.
+
+        The parser has improved since many pages were first fetched (page
+        scripts and navigation used to survive into the transcript text), and
+        every fetch keeps its raw HTML under artifacts/, so the corpus can be
+        cleaned offline with no request to the publisher. An episode whose
+        saved page turns out to have no transcript body goes back to
+        `no_transcript_found`, so the next acquisition tries other sources.
+
+        Returns counts: episodes, rewritten, unchanged, emptied, missing_raw,
+        plus the episode ids emptied.
+        """
+        stats: dict = {
+            "episodes": 0,
+            "rewritten": 0,
+            "unchanged": 0,
+            "emptied": 0,
+            "missing_raw": 0,
+            "emptied_ids": [],
+        }
+        sql = (
+            "SELECT e.episode_id, e.podcast_slug, e.title, e.transcript_source_url, "
+            "e.transcript_resolution_note, t.artifact_path, t.audio_path, "
+            "t.content_hash FROM episodes e JOIN episode_transcripts t "
+            "USING (episode_id) WHERE e.transcript_source_type = 'official_site' "
+            "AND e.pull_status = 'transcript_ready' "
+        )
+        params: list[str] = []
+        if source_slugs:
+            sql += f"AND e.podcast_slug IN ({', '.join('?' for _ in source_slugs)}) "
+            params.extend(source_slugs)
+        sql += "ORDER BY e.podcast_slug, e.episode_id"
+        with connect(self.db_path) as conn:
+            rows = [dict(row) for row in conn.execute(sql, params)]
+            for row in rows:
+                stats["episodes"] += 1
+                raw = row.get("artifact_path")
+                if not raw or not Path(raw).exists():
+                    stats["missing_raw"] += 1
+                    continue
+                text = html_to_transcript_text(Path(raw).read_text(errors="ignore"))
+                if not has_transcript_body(text):
+                    stats["emptied"] += 1
+                    stats["emptied_ids"].append(row["episode_id"])
+                    if not dry_run:
+                        self._set_status(
+                            conn,
+                            row["episode_id"],
+                            "no_transcript_found",
+                            "reparse: saved page has no transcript body",
+                        )
+                    continue
+                new_hash = hashlib.sha1(text.encode("utf-8")).hexdigest()
+                if new_hash == row.get("content_hash"):
+                    stats["unchanged"] += 1
+                    continue
+                stats["rewritten"] += 1
+                if dry_run:
+                    continue
+                store_canonical_transcript(
+                    conn=conn,
+                    transcript_dir=self.transcript_dir,
+                    transcript_meta_dir=self.transcript_meta_dir,
+                    episode=row,
+                    transcript_text=text,
+                    source_type="official_site",
+                    source_url=row.get("transcript_source_url"),
+                    resolution_note="reparse 2026-09: "
+                    + (row.get("transcript_resolution_note") or "official_site"),
+                    artifact_path=raw,
+                    audio_path=row.get("audio_path"),
+                    is_machine_generated=False,
+                )
+            conn.commit()
+        log(
+            f"reparse done episodes={stats['episodes']} rewritten={stats['rewritten']} "
+            f"unchanged={stats['unchanged']} emptied={stats['emptied']} "
+            f"missing_raw={stats['missing_raw']}"
+        )
         return stats
 
     def upgrade_machine_transcripts(
